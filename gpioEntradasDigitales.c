@@ -4,37 +4,34 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 
-#define PIN_BOTON GPIO_NUM_0  // Cambiar por el pin usado
-#define TIEMPO_ANTIREBOTE_US 20000  // 20 ms en microsegundos
-
-static const char *TAG = "BOTON";
-static int64_t ultima_interrupcion = 0;
-
-static void IRAM_ATTR isr_handler(void* arg) {
-    int64_t ahora = esp_timer_get_time(); // Tiempo actual en microsegundos
-    if ((ahora - ultima_interrupcion) > TIEMPO_ANTIREBOTE_US) {
-        ultima_interrupcion = ahora;
-        ESP_EARLY_LOGI(TAG, "¡Botón presionado!");
-    }
-}
+#define PIN_BOTON GPIO_NUM_0  // Puedes cambiar el pin
+#define TIEMPO_ANTIREBOTE_MS 20
 
 void app_main(void) {
-    // Configurar pin como entrada con pull-up interno
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << PIN_BOTON),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE // Interrupción por flanco de bajada
-    };
-    gpio_config(&io_conf);
+    gpio_reset_pin(PIN_BOTON);
+    gpio_set_direction(PIN_BOTON, GPIO_MODE_INPUT);
+    gpio_pullup_en(PIN_BOTON); // Activar resistencia de pull-up
 
-    // Instalar servicio de interrupciones
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(PIN_BOTON, isr_handler, NULL);
+    int estado_anterior = 1; // Valor inicial (1 = no presionado por pull-up)
+    int estado_actual;
+    int64_t ultima_lectura = esp_timer_get_time();
 
-    // Ciclo vacío, la lógica está en la interrupción
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Espera pasiva
+        int64_t ahora = esp_timer_get_time();
+
+        // Leer el botón
+        estado_actual = gpio_get_level(PIN_BOTON);
+
+        // Detectar flanco de bajada con anti-rebote
+        if (estado_anterior == 1 && estado_actual == 0 &&
+            (ahora - ultima_lectura) > (TIEMPO_ANTIREBOTE_MS * 1000)) {
+
+            ESP_LOGI("BOTON", "¡Botón presionado!");
+            ultima_lectura = ahora;
+        }
+
+        estado_anterior = estado_actual;
+
+        vTaskDelay(pdMS_TO_TICKS(10)); // Pequeño retardo
     }
 }
